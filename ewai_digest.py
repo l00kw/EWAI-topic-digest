@@ -25,11 +25,13 @@ import html
 import os
 import re
 import sys
+import json
 import textwrap
 import urllib.parse
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -474,19 +476,56 @@ def cross_reference(
 # --------------------------------------------------------------------------- #
 # Stage 4 — deep dive                                                          #
 # --------------------------------------------------------------------------- #
+def _split_summary_and_sources(raw: str, max_age_days: int = 14):
+    """Split deep_dive output into (summary_text, [{title,url,date}, ...]).
+    Sources older than max_age_days, or without a parseable date, are dropped."""
+    marker = "---SOURCES---"
+    summary_part, _, sources_part = raw.partition(marker)
+    summary = summary_part.strip()
 
-def deep_dive(topic: str) -> str:
-    """Stage 4: Claude + web search gather details on the winning topic."""
+    sources = []
+    if sources_part.strip():
+        text = sources_part.replace("```json", "").replace("```", "").strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = []
+        cutoff = datetime.now() - timedelta(days=max_age_days)
+        for item in parsed if isinstance(parsed, list) else []:
+            date_str = str(item.get("date", "")).strip()
+            try:
+                pub = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                continue  # drop undated / badly-dated sources
+            if pub >= cutoff:
+                sources.append({
+                    "title": str(item.get("title", "")).strip(),
+                    "url": str(item.get("url", "")).strip(),
+                    "date": date_str,
+                })
+    return summary, sources
+
+
+def deep_dive(topic: str) -> dict:
+    """Stage 4: Claude + web search gather details on the winning topic.
+    Returns {"summary": str, "sources": [{title,url,date}, ...]}."""
     _print_header("STAGE 4 — deep_dive()")
     print(f"topic: {topic}\n")
     client = _client()
 
+    today = datetime.now().strftime("%Y-%m-%d")
     prompt = textwrap.dedent(
         f"""\
         Research this topic in depth using web search, pulling from multiple
         sources: "{topic}"
 
         {EWAI_MISSION}
+
+        RECENCY RULE (important): Today is {today}. Only use sources published
+        within the last 14 days. Do NOT cite or rely on anything older, even if
+        it ranks highly or seems relevant. If a source has no clear publication
+        date, do not use it. If you cannot find enough recent material, say so
+        plainly rather than falling back on older articles.
 
         Produce a briefing that covers:
         1. What is actually happening (plain language, no jargon).
@@ -496,13 +535,20 @@ def deep_dive(topic: str) -> str:
         3. If a natural, concrete action exists, name one or two realistic
            things a member could DO about it. If the topic is more about
            staying informed than personal action, say so instead of forcing one.
-        Cite the source names you draw from. Keep it under 350 words.
+        Keep the briefing under 350 words.
+
+        After the briefing, output a line containing exactly ---SOURCES---
+        and then a JSON array of the sources you actually used, each an object
+        with keys "title", "url", and "date" (YYYY-MM-DD). Include only sources
+        published within the last 14 days. Output ONLY the JSON after the marker.
         """
     )
-    research = _run_with_web_search(client, prompt, max_uses=6)
-    print(textwrap.indent(research or "(no result)", "  "))
-    return research
+    raw = _run_with_web_search(client, prompt, max_uses=6) or ""
 
+    summary, sources = _split_summary_and_sources(raw, max_age_days=14)
+    print(textwrap.indent(summary or "(no result)", "  "))
+    print(f"\n  [{len(sources)} recent source(s) captured]")
+    return {"summary": summary, "sources": sources}
 
 # --------------------------------------------------------------------------- #
 # Stage 5 — WhatsApp message                                                   #
@@ -535,6 +581,49 @@ def generate_whatsapp_message(research: str) -> str:
         {research}
         """
     )
+def deep_dive(topic: str) -> dict:
+    """Stage 4: Claude + web search gather details on the winning topic.
+    Returns {"summary": str, "sources": [{title,url,date}, ...]}."""
+    _print_header("STAGE 4 — deep_dive()")
+    print(f"topic: {topic}\n")
+    client = _client()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    prompt = textwrap.dedent(
+        f"""\
+        Research this topic in depth using web search, pulling from multiple
+        sources: "{topic}"
+
+        {EWAI_MISSION}
+
+        RECENCY RULE (important): Today is {today}. Only use sources published
+        within the last 14 days. Do NOT cite or rely on anything older, even if
+        it ranks highly or seems relevant. If a source has no clear publication
+        date, do not use it. If you cannot find enough recent material, say so
+        plainly rather than falling back on older articles.
+
+        Produce a briefing that covers:
+        1. What is actually happening (plain language, no jargon).
+        2. Why it matters to women engaged with AI — whether that's a direct
+           impact on career, financial, or daily-life decisions, or simply
+           something significant for understanding where AI is heading.
+        3. If a natural, concrete action exists, name one or two realistic
+           things a member could DO about it. If the topic is more about
+           staying informed than personal action, say so instead of forcing one.
+        Keep the briefing under 350 words.
+
+        After the briefing, output a line containing exactly ---SOURCES---
+        and then a JSON array of the sources you actually used, each an object
+        with keys "title", "url", and "date" (YYYY-MM-DD). Include only sources
+        published within the last 14 days. Output ONLY the JSON after the marker.
+        """
+    )
+    raw = _run_with_web_search(client, prompt, max_uses=6) or ""
+
+    summary, sources = _split_summary_and_sources(raw, max_age_days=14)
+    print(textwrap.indent(summary or "(no result)", "  "))
+    print(f"\n  [{len(sources)} recent source(s) captured]")
+    return {"summary": summary, "sources": sources}
     response = client.messages.create(
         model=MODEL,
         max_tokens=1200,
@@ -559,12 +648,25 @@ def run_pipeline() -> DigestResult:
     if not topic:
         sys.exit("No winning topic was selected; stopping before deep dive.")
     result.deep_dive = deep_dive(topic)
-    result.whatsapp_message = generate_whatsapp_message(result.deep_dive)
+    result.whatsapp_message = generate_whatsapp_message(result.deep_dive["summary"])
 
     _print_header("DONE — final WhatsApp message")
     print(result.whatsapp_message)
-    return result
 
+    sources = result.deep_dive.get("sources", [])
+    if sources:
+        print("\nSources:")
+        for s in sources:
+            line = f"- {s['title']}"
+            if s.get("date"):
+                line += f" ({s['date']})"
+            print(line)
+            if s.get("url"):
+                print(f"  {s['url']}")
+    else:
+        print("\nSources: none within the last 14 days were captured.")
+
+    return result
 
 def main() -> None:
     run_pipeline()
