@@ -48,11 +48,18 @@ except ImportError:  # pragma: no cover - dependency hint
 # Configuration — edit these to swap sources, tune weighting, or change voice. #
 # --------------------------------------------------------------------------- #
 
-MODEL = os.environ.get("EWAI_MODEL", "claude-opus-4-8")
+# Default model. Sonnet 5 is a good quality/cost balance — roughly half the
+# price of Opus. Swap it with the EWAI_MODEL env var:
+#   higher quality:  EWAI_MODEL=claude-opus-4-8
+#   cheapest:        EWAI_MODEL=claude-haiku-4-5
+MODEL = os.environ.get("EWAI_MODEL", "claude-sonnet-5")
 
-# Server-side web search tool. The _20260209 variant (dynamic filtering) needs
-# Opus 4.8 / 4.7 / 4.6 or Sonnet — older models should use web_search_20250305.
-WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search"}
+# Capability groups so MODEL can be swapped freely — they pick the right
+# web-search tool version and thinking config for whichever model is set.
+# The web_search_20260209 variant (dynamic filtering) and adaptive thinking
+# need newer models; older/cheaper models fall back gracefully.
+_DYNAMIC_WEB_SEARCH_MODELS = ("opus-4-8", "opus-4-7", "opus-4-6", "sonnet-5", "sonnet-4-6")
+_ADAPTIVE_THINKING_MODELS = ("fable", "opus-4-8", "opus-4-7", "opus-4-6", "sonnet-5", "sonnet-4-6")
 
 USER_AGENT = "ewai-digest/1.0 (+https://europeanwomeninai.org)"
 
@@ -189,22 +196,38 @@ def _text_from_response(response: Any) -> str:
     return "\n".join(p for p in parts if p).strip()
 
 
+def _web_search_tool(max_uses: int = 5) -> dict[str, Any]:
+    """Pick the web_search tool version the current MODEL supports."""
+    version = (
+        "web_search_20260209"
+        if any(m in MODEL for m in _DYNAMIC_WEB_SEARCH_MODELS)
+        else "web_search_20250305"
+    )
+    return {"type": version, "name": "web_search", "max_uses": max_uses}
+
+
+def _thinking_kwargs() -> dict[str, Any]:
+    """Adaptive thinking for models that support it; nothing otherwise."""
+    if any(m in MODEL for m in _ADAPTIVE_THINKING_MODELS):
+        return {"thinking": {"type": "adaptive"}}
+    return {}
+
+
 def _run_with_web_search(client: Any, prompt: str, max_uses: int = 5) -> str:
     """One Claude turn with the server-side web_search tool.
 
     Handles the `pause_turn` stop reason (server-tool sampling loop hit its
     iteration cap) by resending until Claude finishes.
     """
-    tool = dict(WEB_SEARCH_TOOL)
-    tool["max_uses"] = max_uses
+    tool = _web_search_tool(max_uses)
     messages = [{"role": "user", "content": prompt}]
     for _ in range(6):  # bound the continuation loop
         response = client.messages.create(
             model=MODEL,
             max_tokens=4000,
-            thinking={"type": "adaptive"},
             tools=[tool],
             messages=messages,
+            **_thinking_kwargs(),
         )
         if response.stop_reason == "pause_turn":
             messages.append({"role": "assistant", "content": response.content})
@@ -414,9 +437,9 @@ def cross_reference(
     response = client.messages.create(
         model=MODEL,
         max_tokens=2000,
-        thinking={"type": "adaptive"},
         output_config={"format": {"type": "json_schema", "schema": CROSS_REFERENCE_SCHEMA}},
         messages=[{"role": "user", "content": prompt}],
+        **_thinking_kwargs(),
     )
     text = _text_from_response(response)
     import json
@@ -502,8 +525,8 @@ def generate_whatsapp_message(research: str) -> str:
     response = client.messages.create(
         model=MODEL,
         max_tokens=1200,
-        thinking={"type": "adaptive"},
         messages=[{"role": "user", "content": prompt}],
+        **_thinking_kwargs(),
     )
     message = _text_from_response(response)
     print("\n" + message + "\n")

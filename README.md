@@ -52,7 +52,29 @@ Everything tunable lives in the config block near the top of `ewai_digest.py`:
 - `MAINSTREAM_QUERIES` — the focus-area searches for stage 2.
 - `SELECTION_WEIGHTING` — the rules stage 3 uses to pick a topic.
 - `EWAI_MISSION` / `EWAI_VOICE` — the framing injected into every Claude prompt.
-- `MODEL` — defaults to `claude-opus-4-8`; override with the `EWAI_MODEL` env var.
+- `MODEL` — defaults to `claude-sonnet-5` (good quality, ~half the price of
+  Opus). Override with the `EWAI_MODEL` env var — the tool automatically picks
+  the right web-search tool version and thinking config for the model you set:
+  - higher quality: `export EWAI_MODEL=claude-opus-4-8`
+  - cheapest: `export EWAI_MODEL=claude-haiku-4-5`
+
+## Cost & billing
+
+Claude API usage is **billed separately from a Claude.ai Pro/Max subscription**
+— a Pro plan does not include API access. You need an API key from the
+[Anthropic Console](https://console.anthropic.com) with a payment method or
+prepurchased credits. Usage is pay-as-you-go by token count, so a single digest
+run is cheap (a handful of model calls plus a few web searches), but not free.
+
+To cap what you can be charged, set a spending limit in the Console:
+
+1. Sign in at <https://console.anthropic.com>.
+2. Open **Settings → Billing** (also look under **Limits / Usage limits**).
+3. Set a **monthly spend limit** (and, if offered, usage-alert thresholds).
+
+Once reached, the API stops serving requests for the rest of the period, so the
+tool can't run up an unexpected bill. The cheaper default model above also keeps
+per-run cost down.
 
 ## Notes
 
