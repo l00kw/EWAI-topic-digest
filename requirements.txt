@@ -1,0 +1,4 @@
+anthropic>=0.116.0
+beautifulsoup4>=4.12
+# RSS/Atom feeds are parsed with the Python standard library (xml.etree),
+# so no feedparser dependency is required.
