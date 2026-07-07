@@ -107,15 +107,23 @@ EWAI_VOICE = "Purposeful, Warm, Courageous"
 # Weighting rules for stage 3. Edit this string to re-tune topic selection.
 SELECTION_WEIGHTING = textwrap.dedent(
     """\
-    Weight for ACTIONABILITY for someone new to AI over "biggest story".
+    Weight for SIGNIFICANCE and AWARENESS VALUE for the community — the topic
+    does NOT need to map to finance, career, or daily-life advice to win.
+
     - Topics appearing in BOTH insider and mainstream sources are the strongest
       candidates (real + relevant to a non-technical audience).
+
     - Mainstream-only topics can still matter to our audience even if AI insiders
       consider them old news — do not dismiss them.
+
     - Insider-only topics should be DEPRIORITIZED unless they are major safety or
       regulatory news that a non-technical woman genuinely needs to know about.
-    Prefer the topic that offers a clear thing an EWAI member could actually do
-    differently this week in her finances, career, or daily life.
+
+    Prefer whichever topic is most significant for AI awareness broadly — something
+    that shifts the landscape, changes what's possible, or represents a meaningful
+    shift in how AI is being built, regulated, or adopted. The goal is for members
+    to be informed and able to engage in conversation about what matters right now.
+    A direct action step is a bonus, not a requirement.
     """
 )
 
@@ -482,9 +490,12 @@ def deep_dive(topic: str) -> str:
 
         Produce a briefing that covers:
         1. What is actually happening (plain language, no jargon).
-        2. Why it matters specifically to women navigating career, financial,
-           or life inflection points who are relatively new to AI.
-        3. One or two concrete, realistic things a member could DO about it.
+        2. Why it matters to women engaged with AI — whether that's a direct
+           impact on career, financial, or daily-life decisions, or simply
+           something significant for understanding where AI is heading.
+        3. If a natural, concrete action exists, name one or two realistic
+           things a member could DO about it. If the topic is more about
+           staying informed than personal action, say so instead of forcing one.
         Cite the source names you draw from. Keep it under 350 words.
         """
     )
@@ -513,8 +524,10 @@ def generate_whatsapp_message(research: str) -> str:
         - Reframe the topic through EWAI's mission (practical AI adoption for
           women navigating career/financial/life inflection points).
         - Structure: (1) the topic, (2) why it matters to us, (3) ONE concrete
-          action step she can take this week.
-        - Short enough for WhatsApp: aim for ~120 words. Warm, purposeful,
+          action step she can take this week — ONLY if one naturally exists.
+          If the topic is more about staying informed than personal action,
+          close on why it matters instead of forcing an action step.
+        Short enough for WhatsApp: aim for ~120 words. Warm, purposeful,
           courageous. A couple of tasteful emoji are fine. No hashtags,
           no markdown headers.
 
